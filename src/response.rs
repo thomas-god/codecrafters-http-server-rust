@@ -45,7 +45,7 @@ impl Response {
         );
         let mut headers = String::new();
         let mut body = String::new();
-        if let (Some(content_type), Some(_body)) = (&self.content_type, &self.body) {
+        if let (Some(_content_type), Some(_body)) = (&self.content_type, &self.body) {
             headers.push_str("Content-Type: text/plain\r\n");
             headers.push_str(&format!("Content-Length: {}\r\n", _body.as_bytes().len()));
             body = _body.to_owned();

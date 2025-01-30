@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 #[allow(unused_imports)]
 use std::net::TcpListener;
 
-use request::Request;
+use request::{Request, Verb};
 use response::{Response, Status};
 
 mod request;
@@ -24,15 +24,25 @@ fn main() {
                 let Some(request) = Request::from_buffer(&buf[..n]) else {
                     break;
                 };
-                match request.target.as_str() {
-                    "/" => stream
+                match (request.verb, request.target.as_str()) {
+                    (Verb::GET, "/") => stream
                         .write_all(Response::new(Status::OK).as_string().as_bytes())
                         .unwrap(),
-                    target if target.starts_with("/echo/") => {
+                    (Verb::GET, target) if target.starts_with("/echo/") => {
                         let echo_back = request.target.strip_prefix("/echo/").unwrap();
                         let mut response = Response::new(Status::OK);
                         response.set_body(response::ContentType::Text, echo_back.to_owned());
-
+                        stream.write_all(response.as_string().as_bytes()).unwrap();
+                    }
+                    (Verb::GET, "/user-agent") => {
+                        let Some(user_agent) = request.headers.get("User-Agent") else {
+                            stream
+                                .write_all(Response::new(Status::NotFound).as_string().as_bytes())
+                                .unwrap();
+                            return;
+                        };
+                        let mut response = Response::new(Status::OK);
+                        response.set_body(response::ContentType::Text, user_agent.to_owned());
                         stream.write_all(response.as_string().as_bytes()).unwrap();
                     }
                     _ => stream
