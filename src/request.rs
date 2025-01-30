@@ -1,14 +1,13 @@
-
 #[derive(Debug, PartialEq)]
 pub enum Verb {
-    GET
+    GET,
 }
 
 impl Verb {
     pub fn from_str(word: &str) -> Option<Verb> {
         match word {
             "GET" => Some(Verb::GET),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -28,7 +27,10 @@ impl Request {
         let verb = request_line.next().and_then(Verb::from_str)?;
         let target = request_line.next()?;
 
-        Some(Request { verb, target: target.to_string() })
+        Some(Request {
+            verb,
+            target: target.to_string(),
+        })
     }
 }
 
@@ -41,7 +43,7 @@ mod tests {
     #[test]
     fn test_parse_request() {
         let buffer = "GET /index.html HTTP/1.1\r\nHost: localhost:4221\r\nUser-Agent: curl/7.64.1\r\nAccept: */*\r\n\r\n".as_bytes();
-        
+
         let request = Request::from_buffer(&buffer);
         assert!(request.is_some());
 

@@ -3,8 +3,10 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 
 use request::Request;
+use response::{Response, Status};
 
 mod request;
+mod response;
 
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -23,8 +25,19 @@ fn main() {
                     break;
                 };
                 match request.target.as_str() {
-                    "/" => stream.write_all("HTTP/1.1 200 OK\r\n\r\n".as_bytes()).unwrap(),
-                    _ => stream.write_all("HTTP/1.1 404 Not Found\r\n\r\n".as_bytes()).unwrap()
+                    "/" => stream
+                        .write_all(Response::new(Status::OK).as_string().as_bytes())
+                        .unwrap(),
+                    target if target.starts_with("/echo/") => {
+                        let echo_back = request.target.strip_prefix("/echo/").unwrap();
+                        let mut response = Response::new(Status::OK);
+                        response.set_body(response::ContentType::Text, echo_back.to_owned());
+
+                        stream.write_all(response.as_string().as_bytes()).unwrap();
+                    }
+                    _ => stream
+                        .write_all(Response::new(Status::NotFound).as_string().as_bytes())
+                        .unwrap(),
                 };
 
                 println!("accepted new connection");
