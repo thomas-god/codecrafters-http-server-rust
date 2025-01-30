@@ -1,12 +1,15 @@
 use request::{Request, Verb};
 use response::{Response, Status};
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+};
 
 mod request;
 mod response;
 
 #[tokio::main]
-async fn main(){
+async fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
 
@@ -32,27 +35,36 @@ async fn process_stream(mut stream: TcpStream) {
             match (request.verb, request.target.as_str()) {
                 (Verb::GET, "/") => stream
                     .write_all(Response::new(Status::OK).as_string().as_bytes())
-                    .await.unwrap(),
+                    .await
+                    .unwrap(),
                 (Verb::GET, target) if target.starts_with("/echo/") => {
                     let echo_back = request.target.strip_prefix("/echo/").unwrap();
                     let mut response = Response::new(Status::OK);
                     response.set_body(response::ContentType::Text, echo_back.to_owned());
-                    stream.write_all(response.as_string().as_bytes()).await.unwrap();
+                    stream
+                        .write_all(response.as_string().as_bytes())
+                        .await
+                        .unwrap();
                 }
                 (Verb::GET, "/user-agent") => {
                     let Some(user_agent) = request.headers.get("User-Agent") else {
                         stream
                             .write_all(Response::new(Status::NotFound).as_string().as_bytes())
-                            .await.unwrap();
+                            .await
+                            .unwrap();
                         return;
                     };
                     let mut response = Response::new(Status::OK);
                     response.set_body(response::ContentType::Text, user_agent.to_owned());
-                    stream.write_all(response.as_string().as_bytes()).await.unwrap();
+                    stream
+                        .write_all(response.as_string().as_bytes())
+                        .await
+                        .unwrap();
                 }
                 _ => stream
                     .write_all(Response::new(Status::NotFound).as_string().as_bytes())
-                    .await.unwrap(),
+                    .await
+                    .unwrap(),
             };
 
             println!("accepted new connection");
