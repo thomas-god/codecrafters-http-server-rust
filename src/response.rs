@@ -1,3 +1,7 @@
+use std::io::Write;
+
+use flate2::{write::GzEncoder, Compression};
+
 #[derive(Clone, Copy)]
 pub enum Status {
     OK = 200,
@@ -27,19 +31,23 @@ pub enum Content {
     OctetStream(Vec<u8>),
 }
 
-pub enum Compression {
-    GZIP
+pub enum CompressionAlgorithms {
+    GZIP,
 }
 
 pub struct Response {
     pub status: Status,
     pub body: Option<Content>,
-    pub compression: Option<Compression>
+    pub compression: Option<CompressionAlgorithms>,
 }
 
 impl Response {
     pub fn new() -> Response {
-        Response { status: Status::default(), body: None, compression: None }
+        Response {
+            status: Status::default(),
+            body: None,
+            compression: None,
+        }
     }
 
     pub fn set_body(&mut self, body: Content) {
@@ -50,49 +58,60 @@ impl Response {
         self.status = status;
     }
 
-    pub fn set_compression(&mut self, compression: Compression) {
+    pub fn set_compression(&mut self, compression: CompressionAlgorithms) {
         self.compression = Some(compression);
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes: Vec<u8> = Vec::new();
+
+        // Write status line
         let status_line = format!(
             "HTTP/1.1 {} {}\r\n",
             self.status as u16,
             self.status.as_string()
         );
+        bytes.extend_from_slice(status_line.as_bytes());
+
+        // Write headers and content
         let mut headers = String::new();
-        let body = match &self.body {
-            Some(Content::Text(content)) => {
+        let mut content_bytes: Vec<u8> = Vec::new();
+
+        match (&self.body, &self.compression) {
+            (Some(Content::Text(content)), None) => {
                 headers.push_str("Content-Type: text/plain\r\n");
                 headers.push_str(&format!("Content-Length: {}\r\n", content.as_bytes().len()));
-                content.as_bytes()
+                content_bytes.extend_from_slice(content.as_bytes());
             }
-            Some(Content::OctetStream(bytes)) => {
+            (Some(Content::Text(content)), Some(CompressionAlgorithms::GZIP)) => {
+                headers.push_str("Content-Encoding: gzip\r\n");
+                headers.push_str("Content-Type: text/plain\r\n");
+                let mut compressed_buf = GzEncoder::new(Vec::new(), Compression::default());
+                compressed_buf.write_all(content.as_bytes()).unwrap();
+                content_bytes.extend_from_slice(&compressed_buf.finish().unwrap());
+                headers.push_str(&format!("Content-Length: {}\r\n", content_bytes.len()));
+            }
+            (Some(Content::OctetStream(bytes)), None) => {
                 headers.push_str("Content-Type: application/octet-stream\r\n");
                 headers.push_str(&format!("Content-Length: {}\r\n", bytes.len()));
-                bytes
+                content_bytes.extend_from_slice(bytes);
             }
-            _ => &[],
+            _ => {}
         };
-        
-        if let Some(Compression::GZIP) = self.compression {
-            headers.push_str("Content-Encoding: gzip\r\n");
-        }
 
         // Empty line to signify headers part's end
         headers.push_str("\r\n");
 
-        let mut bytes = Vec::<u8>::new();
-        bytes.extend_from_slice(status_line.as_bytes());
+        // Write headers and content
         bytes.extend_from_slice(headers.as_bytes());
-        bytes.extend_from_slice(body);
+        bytes.extend_from_slice(&content_bytes);
         bytes
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::response::{Content, Response, Status};
+    use crate::response::{CompressionAlgorithms, Content, Response, Status};
 
     #[test]
     fn test_response_as_string() {

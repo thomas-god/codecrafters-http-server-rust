@@ -52,7 +52,7 @@ async fn process_stream(mut stream: TcpStream, file_folder: Option<String>) {
             // Check for compression
             if let Some(algorithms) = request.headers.get("Accept-Encoding") {
                 if algorithms.contains("gzip") {
-                    response.set_compression(response::Compression::GZIP);
+                    response.set_compression(response::CompressionAlgorithms::GZIP);
                 }
             }
 
@@ -71,7 +71,12 @@ fn get_root(_request: &Request, mut response: Response) -> Response {
     response
 }
 
-fn post_file(file_folder: Option<String>, request: &Request, target: &str, mut response: Response) -> Response {
+fn post_file(
+    file_folder: Option<String>,
+    request: &Request,
+    target: &str,
+    mut response: Response,
+) -> Response {
     let Some(folder) = file_folder else {
         response.set_status(Status::NotFound);
         return response;
