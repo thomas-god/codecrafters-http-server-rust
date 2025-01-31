@@ -1,6 +1,7 @@
 #[derive(Clone, Copy)]
 pub enum Status {
     OK = 200,
+    Created = 201,
     NotFound = 404,
 }
 
@@ -8,11 +9,13 @@ impl Status {
     pub fn as_string(&self) -> String {
         match self {
             Self::OK => "OK".to_string(),
+            Self::Created => "Created".to_string(),
             Self::NotFound => "Not Found".to_string(),
         }
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub enum Content {
     Text(String),
     OctetStream(Vec<u8>),

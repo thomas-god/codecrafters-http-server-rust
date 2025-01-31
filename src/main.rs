@@ -1,7 +1,7 @@
 use std::{collections::HashMap, env, fs, path::PathBuf};
 
 use request::{Request, Verb};
-use response::{Response, Status};
+use response::{Content, Response, Status};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -31,6 +31,8 @@ async fn process_stream(mut stream: TcpStream, file_folder: Option<String>) {
     let mut buf = [0u8; 4096];
     match stream.read(&mut buf).await {
         Ok(n) => {
+            let tmp = String::from_utf8(buf[..n].to_vec());
+            println!("{:?}", tmp);
             let Some(request) = Request::from_buffer(&buf[..n]) else {
                 return;
             };
@@ -76,6 +78,20 @@ async fn process_stream(mut stream: TcpStream, file_folder: Option<String>) {
                     let mut response = Response::new(Status::OK);
                     response.set_body(response::Content::OctetStream(file));
                     stream.write_all(&response.as_bytes()).await.unwrap();
+                }
+                (Verb::POST, target) if target.starts_with("/files/") => {
+                    let Some(folder) = file_folder else {
+                        return;
+                    };
+                    let filename = target.strip_prefix("/files/").unwrap().to_string();
+                    if let Some(Content::OctetStream(content)) = request.content {
+                        let path = [folder, filename].iter().collect::<PathBuf>();
+                        fs::write(path, content).unwrap();
+                        stream
+                            .write_all(&Response::new(Status::Created).as_bytes())
+                            .await
+                            .unwrap();
+                    }
                 }
                 _ => stream
                     .write_all(&Response::new(Status::NotFound).as_bytes())
