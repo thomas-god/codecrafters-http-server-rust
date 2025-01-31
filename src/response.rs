@@ -5,6 +5,12 @@ pub enum Status {
     NotFound = 404,
 }
 
+impl Default for Status {
+    fn default() -> Self {
+        Self::OK
+    }
+}
+
 impl Status {
     pub fn as_string(&self) -> String {
         match self {
@@ -21,18 +27,31 @@ pub enum Content {
     OctetStream(Vec<u8>),
 }
 
+pub enum Compression {
+    GZIP
+}
+
 pub struct Response {
     pub status: Status,
     pub body: Option<Content>,
+    pub compression: Option<Compression>
 }
 
 impl Response {
-    pub fn new(status: Status) -> Response {
-        Response { status, body: None }
+    pub fn new() -> Response {
+        Response { status: Status::default(), body: None, compression: None }
     }
 
     pub fn set_body(&mut self, body: Content) {
         self.body = Some(body);
+    }
+
+    pub fn set_status(&mut self, status: Status) {
+        self.status = status;
+    }
+
+    pub fn set_compression(&mut self, compression: Compression) {
+        self.compression = Some(compression);
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
@@ -55,6 +74,12 @@ impl Response {
             }
             _ => &[],
         };
+        
+        if let Some(Compression::GZIP) = self.compression {
+            headers.push_str("Content-Encoding: gzip\r\n");
+        }
+
+        // Empty line to signify headers part's end
         headers.push_str("\r\n");
 
         let mut bytes = Vec::<u8>::new();
@@ -71,16 +96,22 @@ mod tests {
 
     #[test]
     fn test_response_as_string() {
+        let mut response = Response::new();
+        response.set_status(Status::OK);
         assert_eq!(
-            Response::new(Status::OK).as_bytes(),
+            Response::new().as_bytes(),
             "HTTP/1.1 200 OK\r\n\r\n".to_owned().as_bytes()
         );
+
+        let mut response = Response::new();
+        response.set_status(Status::NotFound);
         assert_eq!(
-            Response::new(Status::NotFound).as_bytes(),
+            response.as_bytes(),
             "HTTP/1.1 404 Not Found\r\n\r\n".to_owned().as_bytes()
         );
 
-        let mut res = Response::new(Status::OK);
+        let mut res = Response::new();
+        res.set_status(Status::OK);
         res.set_body(Content::Text("toto".to_owned()));
         assert_eq!(
             res.as_bytes(),
@@ -89,7 +120,8 @@ mod tests {
                 .as_bytes()
         );
 
-        let mut res = Response::new(Status::OK);
+        let mut res = Response::new();
+        res.set_status(Status::OK);
         res.set_body(Content::OctetStream("toto".as_bytes().to_vec()));
         assert_eq!(
             res.as_bytes(),

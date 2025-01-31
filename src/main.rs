@@ -12,8 +12,6 @@ mod response;
 
 #[tokio::main]
 async fn main() {
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    println!("Logs from your program will appear here!");
     let args = parse_args(env::args().collect());
 
     let listener = TcpListener::bind("127.0.0.1:4221").await.unwrap();
@@ -36,68 +34,29 @@ async fn process_stream(mut stream: TcpStream, file_folder: Option<String>) {
             let Some(request) = Request::from_buffer(&buf[..n]) else {
                 return;
             };
-            match (request.verb, request.target.as_str()) {
-                (Verb::GET, "/") => stream
-                    .write_all(&Response::new(Status::OK).as_bytes())
-                    .await
-                    .unwrap(),
-                (Verb::GET, target) if target.starts_with("/echo/") => {
-                    let echo_back = request.target.strip_prefix("/echo/").unwrap();
-                    let mut response = Response::new(Status::OK);
-                    response.set_body(response::Content::Text(echo_back.to_owned()));
-                    stream.write_all(&response.as_bytes()).await.unwrap();
-                }
-                (Verb::GET, "/user-agent") => {
-                    let Some(user_agent) = request.headers.get("User-Agent") else {
-                        stream
-                            .write_all(&Response::new(Status::NotFound).as_bytes())
-                            .await
-                            .unwrap();
-                        return;
-                    };
-                    let mut response = Response::new(Status::OK);
-                    response.set_body(response::Content::Text(user_agent.to_owned()));
-                    stream.write_all(&response.as_bytes()).await.unwrap();
-                }
+
+            let res = Response::new();
+            let mut response = match (&request.verb, request.target.as_str()) {
+                (Verb::GET, "/") => get_root(&request, res),
+                (Verb::GET, target) if target.starts_with("/echo/") => get_echo(&request, res),
+                (Verb::GET, "/user-agent") => get_user_agent(&request, res),
                 (Verb::GET, target) if target.starts_with("/files/") => {
-                    let Some(folder) = file_folder else {
-                        return;
-                    };
-                    let file = target
-                        .strip_prefix("/files/")
-                        .map(|s| s.to_owned())
-                        .unwrap();
-                    let file_path = [folder, file].iter().collect::<PathBuf>();
-                    let Ok(file) = fs::read(file_path) else {
-                        stream
-                            .write_all(&Response::new(Status::NotFound).as_bytes())
-                            .await
-                            .unwrap();
-                        return;
-                    };
-                    let mut response = Response::new(Status::OK);
-                    response.set_body(response::Content::OctetStream(file));
-                    stream.write_all(&response.as_bytes()).await.unwrap();
+                    get_file(&file_folder, target, res)
                 }
                 (Verb::POST, target) if target.starts_with("/files/") => {
-                    let Some(folder) = file_folder else {
-                        return;
-                    };
-                    let filename = target.strip_prefix("/files/").unwrap().to_string();
-                    if let Some(Content::OctetStream(content)) = request.content {
-                        let path = [folder, filename].iter().collect::<PathBuf>();
-                        fs::write(path, content).unwrap();
-                        stream
-                            .write_all(&Response::new(Status::Created).as_bytes())
-                            .await
-                            .unwrap();
-                    }
+                    post_file(file_folder, &request, target, res)
                 }
-                _ => stream
-                    .write_all(&Response::new(Status::NotFound).as_bytes())
-                    .await
-                    .unwrap(),
+                _ => not_found(&request, res),
             };
+
+            // Check for compression
+            if let Some(algorithms) = request.headers.get("Accept-Encoding") {
+                if algorithms.contains("gzip") {
+                    response.set_compression(response::Compression::GZIP);
+                }
+            }
+
+            stream.write_all(&response.as_bytes()).await.unwrap();
 
             println!("accepted new connection");
         }
@@ -105,6 +64,68 @@ async fn process_stream(mut stream: TcpStream, file_folder: Option<String>) {
             println!("error: {}", e);
         }
     }
+}
+
+fn get_root(_request: &Request, mut response: Response) -> Response {
+    response.set_status(Status::OK);
+    response
+}
+
+fn post_file(file_folder: Option<String>, request: &Request, target: &str, mut response: Response) -> Response {
+    let Some(folder) = file_folder else {
+        response.set_status(Status::NotFound);
+        return response;
+    };
+    let filename = target.strip_prefix("/files/").unwrap().to_string();
+    if let Some(Content::OctetStream(ref content)) = request.content {
+        let path = [folder, filename].iter().collect::<PathBuf>();
+        fs::write(path, content).unwrap();
+        response.set_status(Status::Created);
+        return response;
+    }
+    response.set_status(Status::NotFound);
+    response
+}
+
+fn get_file(file_folder: &Option<String>, target: &str, mut response: Response) -> Response {
+    let Some(ref folder) = *file_folder else {
+        response.set_status(Status::NotFound);
+        return response;
+    };
+    let file = target
+        .strip_prefix("/files/")
+        .map(|s| s.to_owned())
+        .unwrap();
+    let file_path = [folder, &file].iter().collect::<PathBuf>();
+    let Ok(file) = fs::read(file_path) else {
+        response.set_status(Status::NotFound);
+        return response;
+    };
+    response.set_status(Status::OK);
+    response.set_body(response::Content::OctetStream(file));
+    response
+}
+
+fn get_user_agent(request: &Request, mut response: Response) -> Response {
+    let Some(user_agent) = request.headers.get("User-Agent") else {
+        response.set_status(Status::NotFound);
+        return response;
+    };
+    response.set_status(Status::OK);
+    response.set_body(response::Content::Text(user_agent.to_owned()));
+    response
+}
+
+fn get_echo(request: &Request, mut response: Response) -> Response {
+    let echo_back = request.target.strip_prefix("/echo/").unwrap();
+    response.set_status(Status::OK);
+    response.set_body(response::Content::Text(echo_back.to_owned()));
+    response
+}
+
+fn not_found(_request: &Request, mut response: Response) -> Response {
+    response.set_status(Status::NotFound);
+    response
 }
 
 fn parse_args(args_list: Vec<String>) -> HashMap<String, String> {
